@@ -154,7 +154,7 @@ function ConsentModal({patient, onSave, onClose}) {
   const fc = k => e => setForm(p=>({...p,[k]:e.target.checked}));
   const submit = () => {
     if (!form.fullName||!form.signature) return alert("Full name and signature required.");
-    if (!form.agreeTreatment||!form.agreePolicy||!form.agreeAge||!form.agreePrivacy) return alert("Please agree to all required terms.");
+    if (!form.agreeAll) return alert("Please check the box agreeing to all terms to continue.");
     onSave(form);
   };
   const iStyle = {width:"100%",padding:"9px 11px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,color:C.text,background:"#fff",boxSizing:"border-box",fontFamily:"inherit",outline:"none"};
@@ -189,23 +189,37 @@ function ConsentModal({patient, onSave, onClose}) {
         <SectionHead>Consent & Liability</SectionHead>
         <div style={{background:"#fef9fc",border:`1px solid ${C.border}`,borderRadius:10,padding:"14px 16px",marginBottom:14,fontSize:12,color:C.muted,lineHeight:1.7}}>
           <b style={{color:C.text,fontSize:13}}>Release of Liability & Treatment Consent</b><br/>
-          I hereby consent to medical evaluation and weight loss treatment by the clinical staff at Sulem Ageless Slimming, including but not limited to prescription medications (Semaglutide, Phentermine, Tirzepatide, etc.), injectable therapies (B12, lipotropic injections), and nutrition counseling. I understand that results may vary and no specific outcome is guaranteed. I release and hold harmless Sulem Ageless Slimming, its owners, physicians, nurses, and staff from any liability arising from treatment, except in cases of gross negligence. I acknowledge I have had the opportunity to ask questions and all have been answered to my satisfaction. I agree to the clinic's payment and cancellation policy, including a $25 late-cancel fee and $35 no-show fee. My personal and medical information will be kept confidential per HIPAA regulations.
+          <br/>
+          <b style={{color:C.text}}>1. Consent to Treatment</b><br/>
+          I hereby consent to medical evaluation, weight loss treatment, and beauty treatments by the clinical staff at Sulem Ageless Slimming, including but not limited to prescription medications, injectable therapies, nutrition counseling, and aesthetic services.<br/>
+          <br/>
+          <b style={{color:C.text}}>2. No Guarantee of Results</b><br/>
+          I understand and acknowledge that no specific outcome, result, or level of improvement has been promised or guaranteed to me. Weight loss and aesthetic results vary from person to person based on individual factors including health history, lifestyle, adherence to the program, and physiology. I am not relying on any guarantee of specific results in agreeing to treatment.<br/>
+          <br/>
+          <b style={{color:C.text}}>3. Right to Withdraw Consent</b><br/>
+          I understand that I have the right to refuse or withdraw my consent to any treatment at any time, without penalty or impact on my care. I may ask questions at any point and may stop any procedure if I am uncomfortable.<br/>
+          <br/>
+          <b style={{color:C.text}}>4. Accuracy of Medical History</b><br/>
+          I confirm that all medical history, medications, allergies, and health information I have provided is true, accurate, and complete to the best of my knowledge. I understand that withholding or providing inaccurate medical information may affect my safety and the effectiveness of treatment, and I assume full responsibility for any consequences resulting from inaccurate information provided by me.<br/>
+          <br/>
+          <b style={{color:C.text}}>5. Assumption of Risk & Known Side Effects</b><br/>
+          I acknowledge that all medical and aesthetic treatments carry inherent risks. These may include but are not limited to: redness, bruising, swelling, discomfort, tenderness, temporary skin irritation, allergic reactions, infection, or unexpected responses to medications or procedures. I voluntarily assume these known and unknown risks associated with my chosen treatments.<br/>
+          <br/>
+          <b style={{color:C.text}}>6. Release of Liability</b><br/>
+          I release and hold harmless Sulem Ageless Slimming, its owners, physicians, nurses, and staff from any liability arising from treatment, except in cases of gross negligence or intentional misconduct. I acknowledge I have had the opportunity to ask questions and all have been answered to my satisfaction. I agree to the clinic's payment and cancellation policy, including a $25 late-cancel fee and $35 no-show fee. My personal and medical information will be kept confidential per HIPAA regulations.
         </div>
 
         {/* Checkboxes */}
         <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
-          {[
-            ["agreeTreatment","I consent to weight loss treatment including medications and injections *"],
-            ["agreePolicy","I agree to the payment, cancellation, and no-show policy *"],
-            ["agreePrivacy","I acknowledge the HIPAA privacy policy *"],
-            ["agreeAge","I confirm I am 18 years of age or older *"],
-            ["agreePhotoCon","I consent to before/after photos for my medical chart (optional)"],
-          ].map(([key,label])=>(
-            <label key={key} style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
-              <input type="checkbox" checked={form[key]||false} onChange={fc(key)} style={{marginTop:2,accentColor:C.accent,width:16,height:16,flexShrink:0}}/>
-              <span style={{fontSize:12,color:C.text,lineHeight:1.6}}>{label}</span>
-            </label>
-          ))}
+          {/* Master agree all */}
+          <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer",background:"#fef0f8",border:`1.5px solid ${C.hero1}`,borderRadius:10,padding:"12px 14px"}}>
+            <input type="checkbox" checked={form["agreeAll"]||false} onChange={e=>{const v=e.target.checked; setForm(p=>({...p,agreeAll:v,agreeTreatment:v,agreePolicy:v,agreePrivacy:v,agreeAge:v}));}} style={{marginTop:2,accentColor:C.accent,width:18,height:18,flexShrink:0}}/>
+            <span style={{fontSize:13,color:C.text,fontWeight:700,lineHeight:1.6}}>I have read, understood, and agree to all of the above terms, consents, and policies. <span style={{color:C.accent}}>*</span></span>
+          </label>
+          <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
+            <input type="checkbox" checked={form["agreePhotoCon"]||false} onChange={fc("agreePhotoCon")} style={{marginTop:2,accentColor:C.accent,width:16,height:16,flexShrink:0}}/>
+            <span style={{fontSize:12,color:C.text,lineHeight:1.6}}>I consent to before/after photos for my medical chart (optional)</span>
+          </label>
         </div>
 
         {/* Signature */}
@@ -279,7 +293,10 @@ function MedsDispensed({meds, onChange}) {
             <F label="Name / Product"><Inp value={m.name} onChange={e=>upd(m.id,"name",e.target.value)} placeholder="e.g. Semaglutide 0.5mg"/></F>
             <F label="Dose"><Inp value={m.dose} onChange={e=>upd(m.id,"dose",e.target.value)} placeholder="e.g. 0.5mg"/></F>
             <F label="Route"><Sel value={m.route} onChange={e=>upd(m.id,"route",e.target.value)} options={MED_ROUTES}/></F>
-            <F label="Frequency"><Sel value={m.freq} onChange={e=>upd(m.id,"freq",e.target.value)} options={MED_FREQS}/></F>
+            <F label="Frequency">
+                <Sel value={m.freq} onChange={e=>upd(m.id,"freq",e.target.value)} options={MED_FREQS}/>
+                <Inp value={m.freqCustom||""} onChange={e=>upd(m.id,"freqCustom",e.target.value)} placeholder="Or type your own frequency..." />
+              </F>
             <F label="Notes" full><Inp value={m.notes} onChange={e=>upd(m.id,"notes",e.target.value)} placeholder="Any special instructions..."/></F>
           </Row2>
         </div>
@@ -854,7 +871,7 @@ export default function App() {
                                   <div style={{fontSize:11,fontWeight:700,color:"#4a9e89",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>💊 Dispensed</div>
                                   {v.medsDispensed.map(m=>(
                                     <div key={m.id} style={{fontSize:12,color:C.text,marginBottom:3}}>
-                                      <b>{m.name}</b>{m.dose&&` · ${m.dose}`}{m.route&&` · ${m.route}`}{m.freq&&` · ${m.freq}`}
+                                      <b>{m.name}</b>{m.dose&&` · ${m.dose}`}{m.route&&` · ${m.route}`}{(m.freqCustom||m.freq)&&` · ${m.freqCustom||m.freq}`}
                                     </div>
                                   ))}
                                 </div>
