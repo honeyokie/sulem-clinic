@@ -1,4 +1,55 @@
- import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+
+// ── Supabase ──────────────────────────────────────────────
+const SUPABASE_URL = "https://cwsjuqznjeuethqfvomb.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3c2p1cXpuamV1ZXRocWZ2b21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5Mjg5NTMsImV4cCI6MjA5ODUwNDk1M30.r86p87wdm_hHX842poLHjTbPAs9Af_TfHs9oZi-73Ig";
+
+const sbFetch = async (path, opts={}) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    ...opts,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+      ...opts.headers,
+    },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+};
+
+const db = {
+  async getPatients() {
+    const rows = await sbFetch("/patients?select=*&order=updated_at.desc");
+    return rows.map(r => r.data);
+  },
+  async savePatient(patient) {
+    await sbFetch("/patients", {
+      method: "POST",
+      body: JSON.stringify({ id: patient.id, data: patient, updated_at: new Date().toISOString() }),
+      headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    });
+  },
+  async deletePatient(id) {
+    await sbFetch(`/patients?id=eq.${id}`, { method: "DELETE" });
+  },
+  async getInventory() {
+    const rows = await sbFetch("/inventory?select=*&order=updated_at.desc");
+    return rows.map(r => r.data);
+  },
+  async saveInventoryItem(item) {
+    await sbFetch("/inventory", {
+      method: "POST",
+      body: JSON.stringify({ id: item.id, data: item, updated_at: new Date().toISOString() }),
+      headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    });
+  },
+  async deleteInventoryItem(id) {
+    await sbFetch(`/inventory?id=eq.${id}`, { method: "DELETE" });
+  },
+};
 
 const C = {
   hero1:"#e8aac8", hero2:"#f7d6e8", accent:"#c47aaa",
@@ -239,10 +290,35 @@ function MedsDispensed({meds, onChange}) {
 
 // ══════════════════════════════════════════════════════════
 export default function App() {
-  const [patients, setPatients] = useState(()=>{ try{const s=localStorage.getItem("sulem_v4_patients"); return s?JSON.parse(s):SAMPLE_DATA;}catch{return SAMPLE_DATA;} });
-  const [inventory,setInventory] = useState(()=>{ try{const s=localStorage.getItem("sulem_v4_inventory"); return s?JSON.parse(s):SAMPLE_INVENTORY;}catch{return SAMPLE_INVENTORY;} });
-  useEffect(()=>{try{localStorage.setItem("sulem_v4_patients",JSON.stringify(patients));}catch{}}, [patients]);
-  useEffect(()=>{try{localStorage.setItem("sulem_v4_inventory",JSON.stringify(inventory));}catch{}}, [inventory]);
+  const [patients,  setPatients]  = useState(SAMPLE_DATA);
+  const [inventory, setInventory] = useState(SAMPLE_INVENTORY);
+  const [syncing,   setSyncing]   = useState(false);
+  const [syncMsg,   setSyncMsg]   = useState("");
+
+  // Load from Supabase on mount
+  useEffect(() => {
+    setSyncing(true);
+    setSyncMsg("Loading...");
+    Promise.all([db.getPatients(), db.getInventory()])
+      .then(([pts, inv]) => {
+        if (pts.length > 0) setPatients(pts);
+        if (inv.length > 0) setInventory(inv);
+        setSyncMsg("");
+      })
+      .catch(() => setSyncMsg("Offline — showing local data"))
+      .finally(() => setSyncing(false));
+  }, []);
+
+  // Save patient to Supabase whenever patients change
+  const savePatientToDb = useCallback(async (patient) => {
+    try { await db.savePatient(patient); setSyncMsg(""); }
+    catch { setSyncMsg("⚠️ Sync error — check connection"); }
+  }, []);
+
+  const saveInventoryToDb = useCallback(async (item) => {
+    try { await db.saveInventoryItem(item); setSyncMsg(""); }
+    catch { setSyncMsg("⚠️ Sync error — check connection"); }
+  }, []);
 
   const [page,       setPage]       = useState("today");
   const [activeId,   setActiveId]   = useState(null);
@@ -266,7 +342,12 @@ export default function App() {
   const photoRef = useRef();
 
   const active   = patients.find(p=>p.id===activeId);
-  const upActive = fn => setPatients(ps=>ps.map(p=>p.id===activeId?fn(p):p));
+  const upActive = fn => setPatients(ps => {
+    const updated = ps.map(p => p.id===activeId ? fn(p) : p);
+    const updatedPatient = updated.find(p => p.id===activeId);
+    if (updatedPatient) savePatientToDb(updatedPatient);
+    return updated;
+  });
 
   const todayAppts = patients.flatMap(p=>(p.appointments||[]).filter(a=>a.date===TODAY).map(a=>({...a,patient:p}))).sort((a,b)=>APPT_TIMES.indexOf(a.time)-APPT_TIMES.indexOf(b.time));
 
@@ -282,8 +363,10 @@ export default function App() {
 
   const savePt = () => {
     if (!ptForm.firstName||!ptForm.lastName) return alert("First and last name required.");
-    if (patients.find(p=>p.id===ptForm.id)) { setPatients(ps=>ps.map(p=>p.id===ptForm.id?{...ptForm}:p)); }
-    else { setPatients(ps=>[{...ptForm,id:uid()},...ps]); }
+    const toSave = patients.find(p=>p.id===ptForm.id) ? {...ptForm} : {...ptForm, id:uid()};
+    if (patients.find(p=>p.id===toSave.id)) { setPatients(ps=>ps.map(p=>p.id===toSave.id?toSave:p)); }
+    else { setPatients(ps=>[toSave,...ps]); }
+    savePatientToDb(toSave);
     goRoster();
   };
 
@@ -297,11 +380,21 @@ export default function App() {
   const saveQuickAppt = () => {
     if (!quickPtId) return alert("Please select a patient.");
     if (!quickAppt.date||!quickAppt.time) return alert("Date and time required.");
-    setPatients(ps=>ps.map(p=>{ if(String(p.id)!==String(quickPtId)) return p; return{...p,appointments:[{...quickAppt,id:uid()},...p.appointments]}; }));
+    setPatients(ps => {
+      const updated = ps.map(p=>{ if(String(p.id)!==String(quickPtId)) return p; return{...p,appointments:[{...quickAppt,id:uid()},...p.appointments]}; });
+      const updatedPatient = updated.find(p=>String(p.id)===String(quickPtId));
+      if (updatedPatient) savePatientToDb(updatedPatient);
+      return updated;
+    });
     setQuickAppt(null); setQuickPtId("");
   };
 
-  const setApptStatus = (patientId,apptId,newStatus) => setPatients(ps=>ps.map(p=>{ if(p.id!==patientId) return p; return{...p,appointments:p.appointments.map(a=>a.id===apptId?{...a,status:newStatus}:a)}; }));
+  const setApptStatus = (patientId,apptId,newStatus) => setPatients(ps => {
+    const updated = ps.map(p=>{ if(p.id!==patientId) return p; return{...p,appointments:p.appointments.map(a=>a.id===apptId?{...a,status:newStatus}:a)}; });
+    const updatedPatient = updated.find(p=>p.id===patientId);
+    if (updatedPatient) savePatientToDb(updatedPatient);
+    return updated;
+  });
 
   const saveVisit = () => {
     if (!visitForm.date) return alert("Date required.");
@@ -319,8 +412,10 @@ export default function App() {
 
   const saveInv = () => {
     if (!invForm.name||!invForm.quantity) return alert("Name and quantity required.");
-    if (editInvId) { setInventory(iv=>iv.map(i=>i.id===editInvId?{...invForm}:i)); }
-    else { setInventory(iv=>[{...invForm,id:uid()},...iv]); }
+    const toSave = editInvId ? {...invForm} : {...invForm, id:uid()};
+    if (editInvId) { setInventory(iv=>iv.map(i=>i.id===editInvId?toSave:i)); }
+    else { setInventory(iv=>[toSave,...iv]); }
+    saveInventoryToDb(toSave);
     setInvForm(null); setEditInvId(null);
   };
 
@@ -354,6 +449,11 @@ export default function App() {
             {(page==="chart"||page==="addPt")&&<Btn variant="outline" onClick={goRoster}>Back to Roster</Btn>}
           </div>
         </div>
+        {syncMsg && (
+          <div style={{maxWidth:780,margin:"4px auto 0",padding:"0 20px"}}>
+            <div style={{fontSize:11,color:syncMsg.includes("⚠️")?"#b05050":"rgba(61,36,56,0.6)",textAlign:"right"}}>{syncMsg}</div>
+          </div>
+        )}
       </div>
 
       {/* NAV TABS */}
@@ -515,8 +615,8 @@ export default function App() {
                             </div>
                             <div style={{display:"flex",flexDirection:"column",gap:4}}>
                               <Btn small variant="ghost" onClick={()=>{setInvForm({...i});setEditInvId(i.id);}}>Edit</Btn>
-                              <Btn small variant="mint" onClick={()=>setInventory(iv=>iv.map(x=>x.id===i.id?{...x,quantity:Number(x.quantity)+1}:x))}>+1</Btn>
-                              <Btn small variant="danger" onClick={()=>setInventory(iv=>iv.map(x=>x.id===i.id?{...x,quantity:Math.max(0,Number(x.quantity)-1)}:x))}>-1</Btn>
+                              <Btn small variant="mint" onClick={()=>{ const upd={...i,quantity:Number(i.quantity)+1}; setInventory(iv=>iv.map(x=>x.id===i.id?upd:x)); saveInventoryToDb(upd); }}>+1</Btn>
+                              <Btn small variant="danger" onClick={()=>{ const upd={...i,quantity:Math.max(0,Number(i.quantity)-1)}; setInventory(iv=>iv.map(x=>x.id===i.id?upd:x)); saveInventoryToDb(upd); }}>-1</Btn>
                             </div>
                           </div>
                         </div>
