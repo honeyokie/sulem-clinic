@@ -272,10 +272,16 @@ function InvoiceModal({patient, onClose}) {
 }
 
 // ── Meds Dispensed Editor ─────────────────────────────────
-function MedsDispensed({meds, onChange}) {
+function MedsDispensed({meds, onChange, inventory=[]}) {
   const add = () => onChange([...meds, emptyMedRow()]);
   const upd = (id,k,v) => onChange(meds.map(m=>m.id===id?{...m,[k]:v}:m));
   const rem = (id) => onChange(meds.filter(m=>m.id!==id));
+
+  // Get medication names from inventory
+  const invMeds = inventory
+    .filter(i=>i.category==="Medications")
+    .map(i=>i.name);
+
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -290,17 +296,140 @@ function MedsDispensed({meds, onChange}) {
             <button onClick={()=>rem(m.id)} style={{background:"#fee2e2",border:"none",color:"#b05050",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Remove</button>
           </div>
           <Row2>
-            <F label="Name / Product"><Inp value={m.name} onChange={e=>upd(m.id,"name",e.target.value)} placeholder="e.g. Semaglutide 0.5mg"/></F>
+            <F label="Name / Product">
+              {invMeds.length>0
+                ? <div>
+                    <select
+                      value={m.name}
+                      onChange={e=>{
+                        upd(m.id,"name",e.target.value);
+                        // Auto fill quantity info if found in inventory
+                      }}
+                      style={{width:"100%",padding:"9px 11px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,color:C.text,background:"#fff",boxSizing:"border-box",fontFamily:"inherit",outline:"none",marginBottom:6}}>
+                      <option value="">Pick from inventory...</option>
+                      {invMeds.map(name=><option key={name} value={name}>{name}</option>)}
+                      <option value="__custom__">➕ Type custom name...</option>
+                    </select>
+                    {(m.name==="__custom__"||!invMeds.includes(m.name))&&m.name!=="__custom__"&&m.name!==""
+                      ? null
+                      : m.name==="__custom__"
+                        ? <Inp value={m.customName||""} onChange={e=>upd(m.id,"customName",e.target.value)} placeholder="Type medication name..."/>
+                        : null
+                    }
+                  </div>
+                : <Inp value={m.name} onChange={e=>upd(m.id,"name",e.target.value)} placeholder="e.g. Semaglutide 0.5mg"/>
+              }
+            </F>
             <F label="Dose"><Inp value={m.dose} onChange={e=>upd(m.id,"dose",e.target.value)} placeholder="e.g. 0.5mg"/></F>
             <F label="Route"><Sel value={m.route} onChange={e=>upd(m.id,"route",e.target.value)} options={MED_ROUTES}/></F>
             <F label="Frequency">
-                <Sel value={m.freq} onChange={e=>upd(m.id,"freq",e.target.value)} options={MED_FREQS}/>
-                <Inp value={m.freqCustom||""} onChange={e=>upd(m.id,"freqCustom",e.target.value)} placeholder="Or type your own frequency..." />
-              </F>
+              <Sel value={m.freq} onChange={e=>upd(m.id,"freq",e.target.value)} options={MED_FREQS}/>
+              <Inp value={m.freqCustom||""} onChange={e=>upd(m.id,"freqCustom",e.target.value)} placeholder="Or type your own frequency..."/>
+            </F>
             <F label="Notes" full><Inp value={m.notes} onChange={e=>upd(m.id,"notes",e.target.value)} placeholder="Any special instructions..."/></F>
           </Row2>
         </div>
       ))}
+      {invMeds.length===0&&(
+        <div style={{fontSize:11,color:C.muted,fontStyle:"italic",marginTop:4}}>
+          💡 Tip: Add medications to your Inventory tab and they'll appear here as quick options!
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Print Instruction Card ────────────────────────────────
+function PrintCard({patient, visit, onClose}) {
+  const meds = visit.medsDispensed || [];
+  const printStyles = `
+    @media print {
+      body * { visibility: hidden; }
+      #printCard, #printCard * { visibility: visible; }
+      #printCard { position: fixed; top: 0; left: 0; width: 100%; }
+      .no-print { display: none !important; }
+    }
+  `;
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(61,36,56,0.5)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <style>{printStyles}</style>
+      <div style={{background:"#fff",borderRadius:20,padding:28,width:"100%",maxWidth:500,boxShadow:"0 8px 32px rgba(194,24,91,0.2)",maxHeight:"90vh",overflowY:"auto"}}>
+        
+        {/* Printable card */}
+        <div id="printCard" style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
+          {/* Header */}
+          <div style={{background:`linear-gradient(135deg,#e8aac8,#d4a8e0)`,borderRadius:12,padding:"20px 24px",marginBottom:20,textAlign:"center"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#3d2438"}}>🌸 Sulem Ageless Slimming</div>
+            <div style={{fontSize:11,color:"#7a5080",marginTop:4,letterSpacing:"0.08em",textTransform:"uppercase"}}>Medication Instructions</div>
+          </div>
+
+          {/* Patient info */}
+          <div style={{background:"#fef9fc",borderRadius:10,padding:"14px 16px",marginBottom:16,border:"1px solid #f5e4ef"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#3d2438"}}>Patient: {patient.firstName} {patient.lastName}</div>
+            <div style={{fontSize:12,color:"#c096b0",marginTop:3}}>Visit Date: {fmt(visit.date)} · Provider: {visit.provider||"—"}</div>
+          </div>
+
+          {/* Medications */}
+          {meds.length===0
+            ? <div style={{textAlign:"center",padding:"20px",color:"#c096b0",fontSize:13}}>No medications recorded for this visit.</div>
+            : meds.map((m,i)=>(
+              <div key={m.id} style={{border:"1.5px solid #f5e4ef",borderRadius:12,padding:"16px 18px",marginBottom:12,position:"relative"}}>
+                <div style={{position:"absolute",top:-10,left:16,background:"#e8aac8",color:"#3d2438",fontSize:10,fontWeight:800,padding:"2px 10px",borderRadius:99,letterSpacing:"0.08em"}}>MEDICATION {i+1}</div>
+                <div style={{fontSize:16,fontWeight:800,color:"#3d2438",marginBottom:10}}>{m.name==="__custom__"?m.customName:m.name}</div>
+                <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"8px 16px",fontSize:13}}>
+                  {m.dose&&<><span style={{color:"#c096b0",fontWeight:600}}>💊 Dose</span><span style={{color:"#3d2438",fontWeight:700}}>{m.dose}</span></>}
+                  {m.route&&<><span style={{color:"#c096b0",fontWeight:600}}>💉 How to take</span><span style={{color:"#3d2438"}}>{m.route}</span></>}
+                  {(m.freqCustom||m.freq)&&<><span style={{color:"#c096b0",fontWeight:600}}>📅 How often</span><span style={{color:"#3d2438",fontWeight:700}}>{m.freqCustom||m.freq}</span></>}
+                  {m.notes&&<><span style={{color:"#c096b0",fontWeight:600}}>📝 Notes</span><span style={{color:"#3d2438",fontStyle:"italic"}}>{m.notes}</span></>}
+                </div>
+              </div>
+            ))
+          }
+
+          {/* Reminders */}
+          <div style={{background:"#fff5f0",border:"1px solid #fcd0b0",borderRadius:10,padding:"12px 16px",marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#b05050",marginBottom:6}}>⚠️ Important Reminders</div>
+            <div style={{fontSize:12,color:"#7a4030",lineHeight:1.7}}>
+              • Take your medication exactly as instructed<br/>
+              • Do not skip doses without contacting the clinic<br/>
+              • If you experience any unusual side effects, call us immediately<br/>
+              • Keep all medications stored as instructed (some require refrigeration)<br/>
+              • Do not share your medication with anyone
+            </div>
+          </div>
+
+          {/* Next appointment */}
+          <div style={{background:"#f0fff8",border:"1px solid #98d4c0",borderRadius:10,padding:"12px 16px",marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#4a9e89",marginBottom:4}}>📅 Your Next Appointment</div>
+            <div style={{fontSize:13,color:"#2d6b5e"}}>Please call us to schedule your next follow-up visit</div>
+          </div>
+
+          {/* Footer */}
+          <div style={{textAlign:"center",fontSize:11,color:"#c096b0",borderTop:"1px solid #f5e4ef",paddingTop:12}}>
+            🌸 Sulem Ageless Slimming · Houston, Texas<br/>
+            Questions? Call us at (XXX) XXX-XXXX
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div style={{display:"flex",gap:10,marginTop:20,flexWrap:"wrap"}} className="no-print">
+          <Btn onClick={()=>window.print()}>🖨️ Print Card</Btn>
+          <Btn variant="blue" onClick={()=>{
+            const medList = meds.map((m,i)=>{
+              const name = m.name==="__custom__"?m.customName:m.name;
+              return `Medication ${i+1}: ${name}\n  Dose: ${m.dose||"—"}\n  How to take: ${m.route||"—"}\n  How often: ${m.freqCustom||m.freq||"—"}${m.notes?`\n  Notes: ${m.notes}`:""}`;
+            }).join("\n\n");
+            const subject = encodeURIComponent(`Your Medication Instructions from Sulem Ageless Slimming`);
+            const body = encodeURIComponent(
+              `Dear ${patient.firstName},\n\nThank you for your visit on ${fmt(visit.date)}. Here are your medication instructions:\n\n${medList}\n\nIMPORTANT REMINDERS:\n• Take your medication exactly as instructed\n• Do not skip doses without contacting the clinic\n• If you experience any unusual side effects, call us immediately\n• Keep all medications stored as instructed\n• Do not share your medication with anyone\n\nIf you have any questions, please don\'t hesitate to call us.\n\nWith care,\nSulem Ageless Slimming\nHouston, Texas\n(XXX) XXX-XXXX`
+            );
+            const email = patient.email || "";
+            window.open(`mailto:${email}?subject=${subject}&body=${body}`);
+          }}>✉️ Send Email</Btn>
+          <Btn variant="ghost" onClick={onClose}>Close</Btn>
+        </div>
+      </div>
     </div>
   );
 }
@@ -355,6 +484,7 @@ export default function App() {
   const [quickPtId,  setQuickPtId]  = useState("");
   const [showInvoice,setShowInvoice]= useState(false);
   const [showConsent,setShowConsent]= useState(false);
+  const [printCard,  setPrintCard]  = useState(null); // {patient, visit}
   const fileRef  = useRef();
   const photoRef = useRef();
 
@@ -838,6 +968,7 @@ export default function App() {
                         <MedsDispensed
                           meds={visitForm.medsDispensed||[]}
                           onChange={meds=>setVisitForm(f=>({...f,medsDispensed:meds}))}
+                          inventory={inventory}
                         />
                       </div>
 
@@ -878,6 +1009,7 @@ export default function App() {
                               )}
                             </div>
                             <Btn small variant="ghost" onClick={()=>{setVisitForm({...v,medsDispensed:v.medsDispensed||[]});setEditVisitId(v.id);}}>Edit</Btn>
+                            {(v.medsDispensed||[]).length>0&&<Btn small variant="mint" onClick={()=>setPrintCard({patient:active,visit:v})}>🖨️ Card</Btn>}
                           </div>
                         </div>
                       ))}
@@ -1033,6 +1165,9 @@ export default function App() {
 
       {/* CONSENT MODAL */}
       {showConsent&&active&&<ConsentModal patient={active} onSave={saveConsent} onClose={()=>setShowConsent(false)}/>}
+
+      {/* PRINT CARD MODAL */}
+      {printCard&&<PrintCard patient={printCard.patient} visit={printCard.visit} onClose={()=>setPrintCard(null)}/>}
 
     </div>
   );
